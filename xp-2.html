@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Diffusion stochastique adaptative</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fdfdfd;
+    color: #222;
+  }
+  body.dark {
+    background: #0d0d0f;
+    color: #eee;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 9999px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Un fond vivant mais discret</h1>
+    <p>Le fond réagit doucement à votre mouvement, préservant une zone de calme pour la lecture. 
+    En mode clair, de fines particules apparaissent comme une brume légère. En mode sombre, c’est un ciel d’étoiles qui respire autour de vous.</p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let stars = [];
+    let center;
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      for (let i = 0; i < 300; i++) {
+        stars.push({
+          x: random(width),
+          y: random(height),
+          vx: random(-0.2, 0.2),
+          vy: random(-0.2, 0.2),
+          baseAlpha: random(0.2, 0.8),
+          size: random(0.5, 1.8)
+        });
+      }
+      noStroke();
+    }
+
+    function draw() {
+      background(theme === 'dark' ? 10 : 252, theme === 'dark' ? 15 : 255, theme === 'dark' ? 18 : 255, 255);
+      const target = createVector(mouseX || width / 2, mouseY || height / 2);
+      center.lerp(target, 0.05);
+
+      for (let s of stars) {
+        let dx = s.x - center.x;
+        let dy = s.y - center.y;
+        let dist2 = dx * dx + dy * dy;
+        let r = sqrt(dist2);
+        let calmRadius = 180;
+        let repel = 0;
+        if (r < calmRadius) {
+          repel = (calmRadius - r) / calmRadius;
+          s.vx += (dx / r) * repel * 0.01;
+          s.vy += (dy / r) * repel * 0.01;
+        }
+
+        s.x += s.vx;
+        s.y += s.vy;
+        s.vx *= 0.98;
+        s.vy *= 0.98;
+
+        // wrap edges
+        if (s.x < 0) s.x += width;
+        if (s.x > width) s.x -= width;
+        if (s.y < 0) s.y += height;
+        if (s.y > height) s.y -= height;
+
+        let alpha = s.baseAlpha * (theme === 'dark' ? 255 : 80);
+        fill(theme === 'dark' ? 255 : 0, alpha * (theme === 'dark' ? 0.8 : 0.05));
+        ellipse(s.x, s.y, s.size);
+      }
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width/2, height/2);
+    }
+
+    // Theme switching
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.remove('light','dark');
+      document.body.classList.add(theme);
+    });
+
+    // Touch support
+    function touchMoved() {
+      center.x = lerp(center.x, touches[0].x, 0.05);
+      center.y = lerp(center.y, touches[0].y, 0.05);
+      return false;
+    }
+  </script>
+</body>
+</html>
