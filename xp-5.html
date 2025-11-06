@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – v4</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fefefe;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique, version « swarms »</h1>
+    <p>
+      La zone autour du curseur reste calme pour préserver la lecture. En
+      périphérie, des poussières se déplacent plus vite, se regroupent et
+      scintillent, comme un micro-écosystème. En mode clair, la densité augmente
+      loin de la zone de lecture, avec des lignes de niveau quasi cartographiques.
+    </p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let particles = [];
+    let center;
+    let swarmCenters = [];
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+      noStroke();
+    }
+
+    function initSwarmCenters() {
+      swarmCenters = [];
+      const count = 3;
+      for (let i = 0; i < count; i++) {
+        swarmCenters.push({
+          x: random(width),
+          y: random(height),
+          phase: random(TWO_PI)
+        });
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const n = theme === 'dark' ? 380 : 900; // plus de poussières en light
+      const cx = width / 2;
+      const cy = height / 2;
+      const minR = 0;
+      const maxR = max(width, height) * 0.75;
+
+      for (let i = 0; i < n; i++) {
+        let x, y;
+
+        if (theme === 'light') {
+          // En light : biais radial, plus de particules en dehors de la zone de lecture
+          const bias = random();
+          let r;
+          if (bias < 0.65) {
+            r = random(maxR * 0.4, maxR); // préférence périphérie
+          } else {
+            r = random(minR, maxR);
+          }
+          const a = random(TWO_PI);
+          x = cx + cos(a) * r;
+          y = cy + sin(a) * r;
+        } else {
+          // En dark : distribution uniforme
+          x = random(width);
+          y = random(height);
+        }
+
+        particles.push({
+          x,
+          y,
+          vx: random(-0.18, 0.18),
+          vy: random(-0.18, 0.18),
+          baseAlpha: random(0.5, 1),
+          phase: random(TWO_PI),
+          size: random(theme === 'dark' ? 0.7 : 1.0,
+                       theme === 'dark' ? 2.4 : 3.4),
+          isFast: random() < 0.12, // ~10-12% particules rapides
+        });
+      }
+    }
+
+    function draw() {
+      const calmRadius = theme === 'dark' ? 190 : 230;
+
+      if (theme === 'dark') {
+        // léger trail pour la nuit étoilée
+        background(7, 90);
+      } else {
+        background(254);
+      }
+
+      // cible curseur
+      const target = createVector(
+        (mouseX >= 0 && mouseX <= width) ? mouseX : width / 2,
+        (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
+      );
+      center.lerp(target, 0.06);
+
+      updateSwarmCenters();
+
+      for (let p of particles) {
+        // Distance au centre de lecture
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const dist2 = dx * dx + dy * dy;
+        const r = sqrt(dist2) || 0.0001;
+
+        // Répulsion dans la zone de lecture
+        let repel = 0;
+        if (r < calmRadius) {
+          repel = (calmRadius - r) / calmRadius;
+          const force = repel * (p.isFast ? 0.016 : 0.010);
+          const nx = dx / r;
+          const ny = dy / r;
+          p.vx += nx * force;
+          p.vy += ny * force;
+        }
+
+        // Turbulence par bruit (plus forte pour les fast)
+        const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
+        const turb = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
+        p.vx += turb;
+        p.vy += turb * 0.5;
+
+        // Attraction douce des fast vers des centres de swarm en périphérie
+        if (p.isFast && r > calmRadius * 1.1) {
+          // choisir le centre de swarm le plus proche
+          let nearest = null;
+          let bestD2 = Infinity;
+          for (let c of swarmCenters) {
+            const ddx = c.x - p.x;
+            const ddy = c.y - p.y;
+            const d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              nearest = c;
+            }
+          }
+          if (nearest) {
+            const ds = sqrt(bestD2) || 1;
+            const ax = (nearest.x - p.x) / ds;
+            const ay = (nearest.y - p.y) / ds;
+            const strength = 0.004;
+            p.vx += ax * strength;
+            p.vy += ay * strength;
+          }
+        }
+
+        // Mise à jour
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Amortissement : fast = gardent plus d'énergie (traces plus longues)
+        const damping = p.isFast ? 0.988 : 0.982;
+        p.vx *= damping;
+        p.vy *= damping;
+
+        // wrap
+        if (p.x < 0) p.x += width;
+        if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height;
+        if (p.y > height) p.y -= height;
+
+        // Scintillement biomimétique
+        const flicker = 0.6 + 0.4 * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
+
+        // Fade selon distance : calme au centre, plus dense en dehors
+        let fadeDist;
+        if (theme === 'light') {
+          // Au centre : quasi invisible, en périphérie : plus présent
+          fadeDist = smoothstep(calmRadius * 0.8, max(width, height) * 0.7, r);
+        } else {
+          fadeDist = smoothstep(0, calmRadius * 1.2, r);
+        }
+
+        let alpha = p.baseAlpha * flicker * fadeDist;
+
+        if (theme === 'dark') {
+          const col = color(255, 255, 255, alpha * (p.isFast ? 255 : 220));
+          fill(col);
+        } else {
+          // En light, on renforce vraiment la lisibilité des poussières
+          const baseAlpha = p.isFast ? 140 : 100;
+          const col = color(0, 0, 0, alpha * baseAlpha);
+          fill(col);
+        }
+
+        ellipse(p.x, p.y, p.size * (p.isFast ? 1.2 : 1.0));
+      }
+
+      // Complément cartographique en light
+      if (theme === 'light') {
+        drawTopoLines(calmRadius);
+      }
+    }
+
+    function updateSwarmCenters() {
+      // Swarm centers dérivent lentement en périphérie
+      const margin = 80;
+      for (let c of swarmCenters) {
+        const t = frameCount * 0.002 + c.phase;
+        c.x += (noise(t, 0) - 0.5) * 2.2;
+        c.y += (noise(0, t) - 0.5) * 2.2;
+
+        if (c.x < -margin) c.x = width + margin;
+        if (c.x > width + margin) c.x = -margin;
+        if (c.y < -margin) c.y = height + margin;
+        if (c.y > height + margin) c.y = -margin;
+      }
+    }
+
+    function drawTopoLines(calmRadius) {
+      stroke(0, 20);
+      strokeWeight(0.7);
+      noFill();
+      const maxR = max(width, height) * 0.9;
+
+      for (let i = 0; i < 65; i++) {
+        const baseAngle = random(TWO_PI);
+        const baseRadius = random(calmRadius + 40, maxR);
+        const x0 = center.x + cos(baseAngle) * baseRadius;
+        const y0 = center.y + sin(baseAngle) * baseRadius;
+
+        beginShape();
+        const segments = 10;
+        for (let j = 0; j < segments; j++) {
+          const a = baseAngle + map(j, 0, segments, -0.7, 0.7);
+          const rr = baseRadius + sin(a * 3 + frameCount * 0.01) * 10;
+          const nx = x0 + cos(a) * 22;
+          const ny = y0 + sin(a) * 22;
+          const px = lerp(x0, nx, 0.4);
+          const py = lerp(y0, ny, 0.4);
+          vertex(px, py);
+        }
+        endShape();
+      }
+      noStroke();
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+    }
+
+    // Thème
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
+      initSwarmCenters();
+      initParticles();
+    });
+
+    // Mobile
+    function touchMoved() {
+      if (touches.length > 0) {
+        center.x = lerp(center.x, touches[0].x, 0.08);
+        center.y = lerp(center.y, touches[0].y, 0.08);
+      }
+      return false;
+    }
+  </script>
+</body>
+</html>
