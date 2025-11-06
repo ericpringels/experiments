@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Réaction Diffusion Subtile</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: var(--bg-color, #fff);
+      }
+      canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: -1;
+      }
+      .content {
+        position: relative;
+        z-index: 10;
+        padding: 10vw;
+        color: var(--text-color, #111);
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        max-width: 60ch;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #111;
+          --text-color: #eee;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="content">
+      <h1>Mouvement organique discret</h1>
+      <p>
+        Ce texte reste parfaitement lisible pendant que le fond vit doucement,
+        réagissant à la position de la souris ou du doigt. Déplace-toi ou
+        scrolle pour voir la zone de calme suivre ton mouvement.
+      </p>
+      <p>
+        L’effet rappelle la diffusion de substances ou le comportement d’un
+        organisme microscopique — mais de manière très atténuée pour ne pas gêner la lecture.
+      </p>
+    </div>
+
+    <script>
+      let pg, center;
+      const s = 1.5; // vitesse de diffusion
+      let t = 0;
+
+      function setup() {
+        createCanvas(windowWidth, windowHeight);
+        pixelDensity(1);
+        pg = createGraphics(width / 2, height / 2);
+        pg.pixelDensity(1);
+        pg.background(127);
+        noCursor();
+        center = createVector(width / 2, height / 2);
+      }
+
+      function draw() {
+        // Zone "de lecture" : on crée une zone de calme autour du centre
+        if (mouseX && mouseY) {
+          center.x = lerp(center.x, mouseX, 0.05);
+          center.y = lerp(center.y, mouseY, 0.05);
+        } else if (touches.length) {
+          center.x = lerp(center.x, touches[0].x, 0.05);
+          center.y = lerp(center.y, touches[0].y, 0.05);
+        }
+
+        // Effet de diffusion biomimétique simplifié
+        pg.loadPixels();
+        for (let y = 1; y < pg.height - 1; y++) {
+          for (let x = 1; x < pg.width - 1; x++) {
+            const idx = (x + y * pg.width) * 4;
+            const n = noise(x * 0.01, y * 0.01, t * 0.005);
+            const d = dist(x, y, center.x / 2, center.y / 2);
+            const calmZone = smoothstep(150, 250, d);
+            const col = 128 + 80 * (n - 0.5) * calmZone;
+            pg.pixels[idx] = pg.pixels[idx + 1] = pg.pixels[idx + 2] = col;
+            pg.pixels[idx + 3] = 255;
+          }
+        }
+        pg.updatePixels();
+        t += s * 0.02;
+
+        image(pg, 0, 0, width, height);
+      }
+
+      function smoothstep(edge0, edge1, x) {
+        let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+      }
+
+      function windowResized() {
+        resizeCanvas(windowWidth, windowHeight);
+        pg = createGraphics(width / 2, height / 2);
+        pg.pixelDensity(1);
+        pg.background(127);
+      }
+    </script>
+  </body>
+</html>
