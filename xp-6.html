@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – v5</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fbfbfb;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique – dark cosmos & light réticulation</h1>
+    <p>
+      Autour du curseur, un large espace reste lisible et calme. En mode sombre,
+      les particules se comportent comme un ciel étoilé vivant. En mode clair,
+      une réticulation sombre plus dense se forme uniquement en périphérie,
+      dans l’esprit réaction-diffusion.
+    </p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let particles = [];
+    let center;
+    let swarmCenters = [];
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+      noStroke();
+    }
+
+    function initSwarmCenters() {
+      swarmCenters = [];
+      const count = 3;
+      for (let i = 0; i < count; i++) {
+        swarmCenters.push({
+          x: random(width),
+          y: random(height),
+          phase: random(TWO_PI)
+        });
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const n = theme === 'dark' ? 380 : 950; // encore plus dense en light
+      const cx = width / 2;
+      const cy = height / 2;
+      const maxR = max(width, height) * 0.8;
+
+      for (let i = 0; i < n; i++) {
+        let x, y;
+        if (theme === 'light') {
+          // Light : biais fort vers la périphérie
+          const bias = random();
+          let r;
+          if (bias < 0.75) {
+            r = random(maxR * 0.45, maxR); // surtout en dehors
+          } else {
+            r = random(0, maxR);
+          }
+          const a = random(TWO_PI);
+          x = cx + cos(a) * r;
+          y = cy + sin(a) * r;
+        } else {
+          x = random(width);
+          y = random(height);
+        }
+
+        particles.push({
+          x,
+          y,
+          vx: random(-0.18, 0.18),
+          vy: random(-0.18, 0.18),
+          baseAlpha: random(0.55, 1),
+          phase: random(TWO_PI),
+          size: random(theme === 'dark' ? 0.7 : 1.0,
+                       theme === 'dark' ? 2.4 : 3.4),
+          isFast: random() < 0.12
+        });
+      }
+    }
+
+    function draw() {
+      const calmRadius = theme === 'dark' ? 190 : 240;
+
+      if (theme === 'dark') {
+        // trail doux
+        background(7, 90);
+      } else {
+        background(251);
+      }
+
+      const target = createVector(
+        (mouseX >= 0 && mouseX <= width) ? mouseX : width / 2,
+        (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
+      );
+      center.lerp(target, 0.06);
+
+      updateSwarmCenters();
+
+      for (let p of particles) {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const dist2 = dx * dx + dy * dy;
+        const r = sqrt(dist2) || 0.0001;
+
+        // Zone de lecture très dégagée
+        let repel = 0;
+        if (r < calmRadius) {
+          repel = (calmRadius - r) / calmRadius;
+          const force = repel * (p.isFast ? 0.016 : 0.010);
+          const nx = dx / r;
+          const ny = dy / r;
+          p.vx += nx * force;
+          p.vy += ny * force;
+        }
+
+        // Turbulence bruitée
+        const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
+        const turb = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
+        p.vx += turb;
+        p.vy += turb * 0.5;
+
+        // Swarms pour les rapides en périphérie
+        if (p.isFast && r > calmRadius * 1.1) {
+          let nearest = null;
+          let bestD2 = Infinity;
+          for (let c of swarmCenters) {
+            const ddx = c.x - p.x;
+            const ddy = c.y - p.y;
+            const d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              nearest = c;
+            }
+          }
+          if (nearest) {
+            const ds = sqrt(bestD2) || 1;
+            const ax = (nearest.x - p.x) / ds;
+            const ay = (nearest.y - p.y) / ds;
+            const strength = 0.004;
+            p.vx += ax * strength;
+            p.vy += ay * strength;
+          }
+        }
+
+        // Update positions
+        p.x += p.vx;
+        p.y += p.vy;
+
+        const damping = p.isFast ? 0.988 : 0.982;
+        p.vx *= damping;
+        p.vy *= damping;
+
+        if (p.x < 0) p.x += width;
+        if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height;
+        if (p.y > height) p.y -= height;
+
+        // scintillement
+        const flicker = 0.6 + 0.4 * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
+
+        let fadeDist;
+        if (theme === 'light') {
+          // centre presque vide, périphérie pleine
+          fadeDist = smoothstep(calmRadius * 0.9, max(width, height) * 0.7, r);
+        } else {
+          fadeDist = smoothstep(0, calmRadius * 1.2, r);
+        }
+
+        let alpha = p.baseAlpha * flicker * fadeDist;
+
+        if (theme === 'dark') {
+          const col = color(255, 255, 255, alpha * (p.isFast ? 255 : 220));
+          fill(col);
+        } else {
+          const baseAlpha = p.isFast ? 170 : 130; // plus contrasté
+          const col = color(0, 0, 0, alpha * baseAlpha);
+          fill(col);
+        }
+
+        ellipse(p.x, p.y, p.size * (p.isFast ? 1.2 : 1.0));
+      }
+
+      // Light : réticulation réaction-diffusion en périphérie
+      if (theme === 'light') {
+        drawReticulation(calmRadius);
+      }
+    }
+
+    function updateSwarmCenters() {
+      const margin = 80;
+      for (let c of swarmCenters) {
+        const t = frameCount * 0.002 + c.phase;
+        c.x += (noise(t, 0) - 0.5) * 2.2;
+        c.y += (noise(0, t) - 0.5) * 2.2;
+
+        if (c.x < -margin) c.x = width + margin;
+        if (c.x > width + margin) c.x = -margin;
+        if (c.y < -margin) c.y = height + margin;
+        if (c.y > height + margin) c.y = -margin;
+      }
+    }
+
+    // "Réaction-diffusion" light : réticulation sombre, dense en périphérie
+    function drawReticulation(calmRadius) {
+      const step = 22; // grille relativement grossière → perf ok
+      const maxR = max(width, height) * 0.9;
+
+      strokeWeight(1);
+      noFill();
+
+      for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+          const d = dist(x, y, center.x, center.y);
+          if (d < calmRadius * 1.1) continue; // grand disque clair autour du curseur
+
+          const n = noise(x * 0.015, y * 0.015, frameCount * 0.01);
+
+          // seuil pour reticulation
+          if (n > 0.53) {
+            // plus on est loin du centre, plus c'est dense/contrasté
+            const density = smoothstep(calmRadius * 1.1, maxR, d);
+            const alpha = map(density, 0, 1, 25, 110, true);
+
+            stroke(0, alpha);
+
+            // petit segment orienté par le bruit → effet "craquelure"
+            const angle = map(n, 0.5, 1, -PI, PI);
+            const len = 8 + 10 * density;
+            const x2 = x + cos(angle) * len;
+            const y2 = y + sin(angle) * len;
+
+            beginShape();
+            vertex(x, y);
+            vertex(x2, y2);
+            endShape();
+          }
+        }
+      }
+      noStroke();
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+    }
+
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
+      initSwarmCenters();
+      initParticles();
+    });
+
+    // Mobile
+    function touchMoved() {
+      if (touches.length > 0) {
+        center.x = lerp(center.x, touches[0].x, 0.08);
+        center.y = lerp(center.y, touches[0].y, 0.08);
+      }
+      return false;
+    }
+  </script>
+</body>
+</html>
