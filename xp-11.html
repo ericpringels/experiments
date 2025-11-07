@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – Light organique</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fbfbfb;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique organique</h1>
+    <p>
+      En mode clair, les lignes se fragmentent et se regroupent en douceur,
+      comme des filaments vivants. En mode sombre, le cosmos reste inchangé.
+    </p>
+  </div>
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+    let center;
+    let lastInteraction = 0;
+    let stars = [];
+    let filaments = [];
+    const ACTIVE_RATIO = 0.2;
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width/2, height/2);
+      initMode();
+      window.addEventListener('scroll', ()=>lastInteraction=millis(), {passive:true});
+      lastInteraction = millis();
+      strokeCap(ROUND);
+    }
+
+    function initMode(){
+      if(theme==='dark') initDark();
+      else initLight();
+    }
+
+    /* --- DARK MODE --- */
+    function initDark(){
+      stars=[];
+      for(let i=0;i<380;i++){
+        stars.push({
+          x:random(width), y:random(height),
+          vx:random(-0.2,0.2), vy:random(-0.2,0.2),
+          baseAlpha:random(0.4,1), phase:random(TWO_PI),
+          size:random(0.7,2.3), isFast:random()<0.12
+        });
+      }
+    }
+    function drawDark(){
+      background(7,90);
+      const calmR=190;
+      const target=createVector(constrain(mouseX,0,width)||width/2,
+                                constrain(mouseY,0,height)||height/2);
+      center.lerp(target,0.06);
+      noStroke();
+      for(const p of stars){
+        const dx=p.x-center.x, dy=p.y-center.y, r=sqrt(dx*dx+dy*dy)||1;
+        if(r<calmR){
+          const f=(calmR-r)/calmR*(p.isFast?0.016:0.010);
+          p.vx+=dx/r*f; p.vy+=dy/r*f;
+        }
+        const n=noise(p.x*0.002,p.y*0.002,frameCount*0.002);
+        const turb=(n-0.5)*(p.isFast?0.025:0.012);
+        p.vx+=turb; p.vy+=turb*0.5;
+        p.x+=p.vx; p.y+=p.vy;
+        p.vx*=p.isFast?0.988:0.982; p.vy*=p.isFast?0.988:0.982;
+        if(p.x<0)p.x+=width; if(p.x>width)p.x-=width;
+        if(p.y<0)p.y+=height; if(p.y>height)p.y-=height;
+        const flick=0.6+0.4*sin(frameCount*(p.isFast?0.05:0.03)+p.phase);
+        const fade=constrain(r/calmR,0,1);
+        const a=p.baseAlpha*flick*(1-fade);
+        fill(255,255,255,a*255); ellipse(p.x,p.y,p.size);
+      }
+    }
+
+    /* --- LIGHT MODE --- */
+    function initLight(){
+      filaments=[];
+      const N=220;
+      const minD=min(width,height);
+      const calmBase=minD*0.45;
+      for(let i=0;i<N;i++){
+        let x,y,r;
+        do{x=random(width);y=random(height);r=dist(x,y,width/2,height/2);}
+        while(r<calmBase*0.8);
+        const active=i<N*ACTIVE_RATIO;
+        filaments.push({
+          x,y,
+          angle:random(TWO_PI),
+          len:active?random(25,45):random(15,30),
+          segs:int(random(2,4)),
+          life:random(1000),
+          isActive:active,
+          speed:active?random(0.4,0.8):random(0.05,0.25)
+        });
+      }
+    }
+
+    function drawLight(){
+      const minD=min(width,height);
+      const idle=constrain((millis()-lastInteraction)/6000,0,1);
+      const calmR=lerp(minD*0.4,minD*0.65,idle);
+      const target=(idle<0.5)?createVector(mouseX,mouseY):createVector(width/2,height/2);
+      center.lerp(target,0.05);
+      background(251);
+      strokeWeight(0.6);
+
+      for(let f of filaments){
+        const dx=f.x-center.x, dy=f.y-center.y;
+        const r=sqrt(dx*dx+dy*dy)||1;
+        if(r<calmR){ // keep reading zone clear
+          const push=(calmR-r)/calmR;
+          f.x+=dx/r*push*0.4; f.y+=dy/r*push*0.4;
+        }
+
+        // mouvement organique
+        const n=noise(f.x*0.0015,f.y*0.0015,frameCount*0.002+f.life);
+        const angleShift=(n-0.5)*PI;
+        f.angle=lerp(f.angle,f.angle+angleShift,0.03);
+        const sp=f.speed*(0.5+0.5*(1-idle));
+        f.x+=cos(f.angle)*sp; f.y+=sin(f.angle)*sp;
+
+        // fragmentation : variation du nombre de segments
+        const frag=noise(f.life*0.001+frameCount*0.001);
+        const fragFactor=map(frag,0,1,0.3,1);
+        const segCount=int(map(fragFactor,0.3,1,4,2));
+        f.segs=segCount;
+        const len=f.len*fragFactor;
+
+        // dégradation lente → petits points
+        f.len=lerp(f.len,len,0.05);
+
+        // rebond
+        if(f.x<0)f.x+=width;if(f.x>width)f.x-=width;
+        if(f.y<0)f.y+=height;if(f.y>height)f.y-=height;
+
+        const distFactor=smoothstep(calmR*0.9,max(width,height)*0.75,r);
+        const alpha=map(distFactor,0,1,40,120);
+        stroke(0,alpha);
+
+        // dessiner segments
+        const dirX=cos(f.angle), dirY=sin(f.angle);
+        const segLen=f.len/f.segs;
+        for(let i=0;i<f.segs;i++){
+          const off=(i-f.segs/2)*segLen*1.2;
+          const x1=f.x+dirX*off;
+          const y1=f.y+dirY*off;
+          const x2=x1+dirX*segLen*0.8;
+          const y2=y1+dirY*segLen*0.8;
+          line(x1,y1,x2,y2);
+        }
+        f.life+=1;
+      }
+    }
+
+    function draw(){
+      if(theme==='dark') drawDark();
+      else drawLight();
+    }
+
+    function smoothstep(e0,e1,x){
+      let t=constrain((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);
+    }
+
+    function windowResized(){
+      resizeCanvas(windowWidth,windowHeight);
+      center.set(width/2,height/2);
+      initMode();
+    }
+
+    document.getElementById('toggleTheme').addEventListener('click',()=>{
+      theme=(theme==='dark')?'light':'dark';
+      document.body.classList.toggle('dark');
+      document.body.classList.toggle('light');
+      initMode();
+      lastInteraction=millis();
+    });
+
+    function mouseMoved(){lastInteraction=millis();}
+    function mousePressed(){lastInteraction=millis();}
+    function touchStarted(){lastInteraction=millis();}
+    function touchMoved(){lastInteraction=millis();}
+  </script>
+</body>
+</html>
