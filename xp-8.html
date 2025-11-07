@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – Light minimal fluide</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #fdfdfd;
+    color: #181818;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique fluide</h1>
+    <p>
+      Cette version légère se concentre sur la lisibilité et la fluidité :
+      des points subtils, une grande zone dégagée pour la lecture, et des
+      mouvements doux et continus dans les zones périphériques.
+    </p>
+  </div>
+
+  <script>
+    let particles = [];
+    let center;
+    let calmRadius;
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      calmRadius = min(width, height) * 0.35; // grande zone dégagée
+      initParticles();
+      stroke(0, 60);
+      strokeWeight(0.8);
+      noFill();
+    }
+
+    function initParticles() {
+      particles = [];
+      const cols = 80;
+      const rows = 50;
+      const spacingX = width / cols;
+      const spacingY = height / rows;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const px = x * spacingX + spacingX / 2;
+          const py = y * spacingY + spacingY / 2;
+          const d = dist(px, py, center.x, center.y);
+          const density = map(d, 0, width / 2, 0, 1, true);
+          // on ne crée pas de particules trop proches du centre
+          if (d > calmRadius * 0.9) {
+            particles.push({
+              x: px,
+              y: py,
+              angle: random(TWO_PI),
+              speed: random(0.1, 0.4),
+              offset: random(1000),
+              density,
+            });
+          }
+        }
+      }
+    }
+
+    function draw() {
+      background(253, 253, 253, 245);
+      calmRadius = lerp(calmRadius, min(width, height) * 0.35, 0.02);
+
+      const t = frameCount * 0.005;
+      for (let p of particles) {
+        // Champ de vecteurs fluide via bruit
+        const n = noise(p.x * 0.0015, p.y * 0.0015, t + p.offset);
+        const a = map(n, 0, 1, -PI, PI);
+        p.angle = lerp(p.angle, a, 0.05);
+        const dx = cos(p.angle) * p.speed;
+        const dy = sin(p.angle) * p.speed;
+        p.x += dx;
+        p.y += dy;
+
+        // Wrap edges
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+        if (p.y < 0) p.y = height;
+        if (p.y > height) p.y = 0;
+
+        // Éviter la zone de lecture
+        const d = dist(p.x, p.y, center.x, center.y);
+        const fade = smoothstep(calmRadius * 0.8, calmRadius, d);
+        const alpha = 30 + 120 * p.density * fade;
+        stroke(0, alpha);
+        point(p.x, p.y);
+      }
+    }
+
+    function mouseMoved() {
+      center.x = lerp(center.x, mouseX, 0.2);
+      center.y = lerp(center.y, mouseY, 0.2);
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      initParticles();
+      calmRadius = min(width, height) * 0.35;
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+  </script>
+</body>
+</html>
