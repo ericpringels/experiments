@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – v7</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fbfbfb;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique – cosmos & flux adaptatifs</h1>
+    <p>
+      Autour du curseur, une large zone reste calme pour la lecture.
+      En mode sombre, le fond est un ciel étoilé vivant.
+      En mode clair, un champ de flux se densifie en périphérie, et une partie
+      seulement des particules reste agitée quand la page est inactive.
+    </p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let particles = [];
+    let center;
+    let swarmCenters = [];
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    let lastInteraction = 0;   // pour mesurer l'inactivité
+    let globalActivity = 1.0;  // 1 = très actif, ~0.2 = calme
+
+    function registerInteraction() {
+      lastInteraction = millis();
+    }
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+      noStroke();
+      lastInteraction = millis();
+      window.addEventListener('scroll', registerInteraction, { passive: true });
+    }
+
+    function initSwarmCenters() {
+      swarmCenters = [];
+      const count = 3;
+      for (let i = 0; i < count; i++) {
+        swarmCenters.push({
+          x: random(width),
+          y: random(height),
+          phase: random(TWO_PI)
+        });
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const n = theme === 'dark' ? 380 : 950;
+      const cx = width / 2;
+      const cy = height / 2;
+      const maxR = max(width, height) * 0.8;
+
+      for (let i = 0; i < n; i++) {
+        let x, y;
+        if (theme === 'light') {
+          // Light : biais fort vers la périphérie
+          const bias = random();
+          let r;
+          if (bias < 0.75) {
+            r = random(maxR * 0.45, maxR);
+          } else {
+            r = random(0, maxR);
+          }
+          const a = random(TWO_PI);
+          x = cx + cos(a) * r;
+          y = cy + sin(a) * r;
+        } else {
+          x = random(width);
+          y = random(height);
+        }
+
+        particles.push({
+          x,
+          y,
+          vx: random(-0.18, 0.18),
+          vy: random(-0.18, 0.18),
+          baseAlpha: random(0.55, 1),
+          phase: random(TWO_PI),
+          size: random(theme === 'dark' ? 0.7 : 1.0,
+                       theme === 'dark' ? 2.4 : 3.4),
+          // En light : ~20 % de particules rapides, en dark : ~12 %
+          isFast: theme === 'light' ? random() < 0.2 : random() < 0.12
+        });
+      }
+    }
+
+    function draw() {
+      // Niveau d'activité global en fonction du temps depuis la dernière interaction
+      if (theme === 'light') {
+        const idleSeconds = (millis() - lastInteraction) / 1000;
+        // au bout de ~8s sans interaction, on descend vers 0.2
+        globalActivity = constrain(1 - idleSeconds / 8, 0.2, 1.0);
+      } else {
+        globalActivity = 1.0; // dark : toujours animé
+      }
+
+      const calmRadius = theme === 'dark' ? 190 : 240;
+
+      if (theme === 'dark') {
+        background(7, 90);
+      } else {
+        background(251);
+      }
+
+      const target = createVector(
+        (mouseX >= 0 && mouseX <= width) ? mouseX : width / 2,
+        (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
+      );
+      center.lerp(target, 0.06);
+
+      updateSwarmCenters();
+
+      for (let p of particles) {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const dist2 = dx * dx + dy * dy;
+        const r = sqrt(dist2) || 0.0001;
+
+        // Activité locale : les "fast" se calment moins
+        const activityFactor = (theme === 'light')
+          ? (p.isFast ? max(globalActivity, 0.5) : globalActivity)
+          : 1.0;
+
+        // zone de lecture
+        if (r < calmRadius) {
+          const repel = (calmRadius - r) / calmRadius;
+          const force = repel * (p.isFast ? 0.016 : 0.010) * activityFactor;
+          const nx = dx / r;
+          const ny = dy / r;
+          p.vx += nx * force;
+          p.vy += ny * force;
+        }
+
+        // turbulence
+        const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
+        const turbBase = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
+        const turb = turbBase * activityFactor;
+        p.vx += turb;
+        p.vy += turb * 0.5;
+
+        // swarms pour les fast en périphérie
+        if (p.isFast && r > calmRadius * 1.1) {
+          let nearest = null;
+          let bestD2 = Infinity;
+          for (let c of swarmCenters) {
+            const ddx = c.x - p.x;
+            const ddy = c.y - p.y;
+            const d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              nearest = c;
+            }
+          }
+          if (nearest) {
+            const ds = sqrt(bestD2) || 1;
+            const ax = (nearest.x - p.x) / ds;
+            const ay = (nearest.y - p.y) / ds;
+            const strength = 0.004 * activityFactor;
+            p.vx += ax * strength;
+            p.vy += ay * strength;
+          }
+        }
+
+        // update position
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // damping : plus fort quand l'activité baisse → particules qui se stabilisent
+        const baseDamping = p.isFast ? 0.988 : 0.982;
+        const calmDamping = 0.996; // très calme
+        const damping = (theme === 'light')
+          ? lerp(calmDamping, baseDamping, activityFactor)
+          : baseDamping;
+        p.vx *= damping;
+        p.vy *= damping;
+
+        // wrap écran
+        if (p.x < 0) p.x += width;
+        if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height;
+        if (p.y > height) p.y -= height;
+
+        // scintillement (amplitude réduite quand activité faible)
+        const flickAmp = (theme === 'light')
+          ? (0.4 * activityFactor + 0.1)   // min ~0.1, max ~0.5
+          : 0.4;
+        const flicker = 0.6 + flickAmp * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
+
+        let fadeDist;
+        if (theme === 'light') {
+          fadeDist = smoothstep(calmRadius * 0.9, max(width, height) * 0.7, r);
+        } else {
+          fadeDist = smoothstep(0, calmRadius * 1.2, r);
+        }
+
+        let alpha = p.baseAlpha * flicker * fadeDist;
+
+        if (theme === 'dark') {
+          const col = color(255, 255, 255, alpha * (p.isFast ? 255 : 220));
+          fill(col);
+        } else {
+          const baseAlpha = p.isFast ? 140 : 100;
+          const col = color(0, 0, 0, alpha * baseAlpha);
+          fill(col);
+        }
+
+        ellipse(p.x, p.y, p.size * (p.isFast ? 1.2 : 1.0));
+      }
+
+      if (theme === 'light') {
+        drawFlowField(calmRadius);
+      }
+    }
+
+    function updateSwarmCenters() {
+      const margin = 80;
+      for (let c of swarmCenters) {
+        const t = frameCount * 0.002 + c.phase;
+        c.x += (noise(t, 0) - 0.5) * 2.2;
+        c.y += (noise(0, t) - 0.5) * 2.2;
+
+        if (c.x < -margin) c.x = width + margin;
+        if (c.x > width + margin) c.x = -margin;
+        if (c.y < -margin) c.y = height + margin;
+        if (c.y > height + margin) c.y = -margin;
+      }
+    }
+
+    // Champ de lignes de flux pour le mode light
+    function drawFlowField(calmRadius) {
+      const spacing = 30;
+      const steps = 16;
+      const stepLen = 6;
+
+      strokeWeight(0.7);
+      for (let y = 0; y < height; y += spacing) {
+        for (let x = 0; x < width; x += spacing) {
+          const d = dist(x, y, center.x, center.y);
+          if (d < calmRadius * 1.05) continue;
+
+          let px = x;
+          let py = y;
+
+          const density = smoothstep(calmRadius * 1.0, max(width, height) * 0.7, d);
+          const alpha = map(density, 0, 1, 25, 120, true);
+          // quand inactif, on baisse un peu le contraste des lignes
+          const adjAlpha = alpha * (0.6 + 0.4 * globalActivity);
+          stroke(0, adjAlpha);
+
+          beginShape();
+          for (let i = 0; i < steps; i++) {
+            const v = flowVector(px, py);
+            px += v.x * stepLen;
+            py += v.y * stepLen;
+            if (dist(px, py, center.x, center.y) < calmRadius) break;
+            vertex(px, py);
+          }
+          endShape();
+        }
+      }
+      noStroke();
+    }
+
+    // Champ de vecteurs
+    function flowVector(x, y) {
+      const s = 0.004;
+      // la vitesse de variation du champ de flux diminue avec l'inactivité
+      const t = frameCount * 0.01 * (0.2 + 0.8 * globalActivity);
+
+      const n1 = noise(x * s, y * s, t);
+      const n2 = noise((x + 1000) * s, (y - 500) * s, t * 0.7);
+
+      let angle = map(n1, 0, 1, -PI, PI);
+      angle += (n2 - 0.5) * PI * 0.7;
+
+      const magBase = 0.6 + 0.7 * (n2 - 0.3);
+      const mag = magBase * (0.5 + 0.5 * globalActivity); // plus calme quand inactif
+      return createVector(cos(angle), sin(angle)).mult(mag);
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+    }
+
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
+      initSwarmCenters();
+      initParticles();
+      lastInteraction = millis();
+    });
+
+    // p5 events pour marquer l'interaction
+    function mouseMoved() { registerInteraction(); }
+    function mousePressed() { registerInteraction(); }
+    function touchStarted() { registerInteraction(); }
+    function touchMoved() {
+      registerInteraction();
+      if (touches.length > 0) {
+        center.x = lerp(center.x, touches[0].x, 0.08);
+        center.y = lerp(center.y, touches[0].y, 0.08);
+      }
+      return false;
+    }
+  </script>
+</body>
+</html>
