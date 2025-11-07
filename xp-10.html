@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – champs & swarms</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fbfbfb;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique – lecture au centre, flux en périphérie</h1>
+    <p>
+      Autour du curseur, une large zone reste blanche pour la lecture.
+      En mode sombre, le fond est un ciel étoilé vivant. En mode clair,
+      des lignes se stabilisent en terrain de courbes de niveaux tandis
+      qu’une minorité plus agitée se regroupe et se sépare comme des
+      petits swarms magnétiques.
+    </p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    let center;
+    let lastInteraction = 0;
+
+    // Dark mode: étoiles
+    let stars = [];
+
+    // Light mode: lignes / segments
+    let segments = [];
+    const ACTIVE_RATIO = 0.2; // 20% swarms
+
+    function registerInteraction() {
+      lastInteraction = millis();
+    }
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      initMode();
+      window.addEventListener('scroll', registerInteraction, { passive: true });
+      lastInteraction = millis();
+      strokeCap(ROUND);
+      strokeJoin(ROUND);
+    }
+
+    function initMode() {
+      if (theme === 'dark') {
+        initDark();
+      } else {
+        initLight();
+      }
+    }
+
+    /* ---------- DARK MODE ---------- */
+    function initDark() {
+      stars = [];
+      const N = 380;
+      for (let i = 0; i < N; i++) {
+        stars.push({
+          x: random(width),
+          y: random(height),
+          vx: random(-0.2, 0.2),
+          vy: random(-0.2, 0.2),
+          baseAlpha: random(0.4, 1),
+          phase: random(TWO_PI),
+          size: random(0.7, 2.3),
+          isFast: random() < 0.12
+        });
+      }
+    }
+
+    function drawDark() {
+      const calmRadius = 190;
+      background(7, 90);
+
+      // cible centre (souris ou centre écran)
+      const target = createVector(
+        (mouseX >= 0 && mouseX <= width) ? mouseX : width / 2,
+        (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
+      );
+      center.lerp(target, 0.06);
+
+      noStroke();
+      for (let p of stars) {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const r = sqrt(dx * dx + dy * dy) || 0.0001;
+
+        if (r < calmRadius) {
+          const repel = (calmRadius - r) / calmRadius;
+          const force = repel * (p.isFast ? 0.016 : 0.010);
+          const nx = dx / r;
+          const ny = dy / r;
+          p.vx += nx * force;
+          p.vy += ny * force;
+        }
+
+        const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
+        const turb = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
+        p.vx += turb;
+        p.vy += turb * 0.5;
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        const damping = p.isFast ? 0.988 : 0.982;
+        p.vx *= damping;
+        p.vy *= damping;
+
+        if (p.x < 0) p.x += width;
+        if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height;
+        if (p.y > height) p.y -= height;
+
+        const flicker = 0.6 + 0.4 * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
+        const fadeDist = smoothstep(0, calmRadius * 1.2, r);
+        const alpha = p.baseAlpha * flicker * fadeDist;
+        fill(255, 255, 255, alpha * (p.isFast ? 255 : 220));
+        ellipse(p.x, p.y, p.size * (p.isFast ? 1.2 : 1.0));
+      }
+    }
+
+    /* ---------- LIGHT MODE ---------- */
+    function initLight() {
+      segments = [];
+      const N = 260; // peu de lignes, mais comportement riche
+      const minDim = min(width, height);
+      const baseCalm = minDim * 0.45;
+
+      for (let i = 0; i < N; i++) {
+        let x, y, r;
+        // on place au départ en périphérie
+        do {
+          x = random(width);
+          y = random(height);
+          r = dist(x, y, width / 2, height / 2);
+        } while (r < baseCalm * 0.8);
+
+        const isActive = (i < N * ACTIVE_RATIO);
+
+        segments.push({
+          x,
+          y,
+          angle: random(TWO_PI),
+          speed: isActive ? random(0.3, 0.7) : random(0.05, 0.25),
+          len: isActive ? random(35, 60) : random(20, 40),
+          baseLen: isActive ? random(35, 60) : random(20, 40),
+          life: 0,         // pour la dégradation
+          isActive,
+          seed: random(1000)
+        });
+      }
+    }
+
+    function drawLight() {
+      const minDim = min(width, height);
+
+      // facteur d'inactivité
+      const idleSecs = (millis() - lastInteraction) / 1000;
+      const idle = constrain(idleSecs / 6, 0, 1); // >6s → inactif
+      // calmRadius : plus grand quand inactif (≈ 80 % de la surface lisible)
+      const calmBase = minDim * 0.40;       // interaction forte
+      const calmIdle = minDim * 0.65;       // lecture / repos
+      const calmRadius = lerp(calmBase, calmIdle, idle);
+
+      // centre : suit le curseur puis revient au centre quand idle
+      const target =
+        (idle < 0.4 && mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height)
+        ? createVector(mouseX, mouseY)
+        : createVector(width / 2, height / 2);
+      center.lerp(target, 0.06);
+
+      background(251);
+
+      // 80% segments passifs = terrain / courbes de niveaux
+      // 20% segments actifs = swarms magnétiques
+      for (let s of segments) {
+        const dx = s.x - center.x;
+        const dy = s.y - center.y;
+        const r = sqrt(dx * dx + dy * dy) || 0.0001;
+
+        // force pour rester hors de la zone de lecture
+        if (r < calmRadius) {
+          const push = (calmRadius - r) / calmRadius;
+          const f = 0.5 * push;
+          const nx = dx / r;
+          const ny = dy / r;
+          s.x += nx * f;
+          s.y += ny * f;
+        }
+
+        if (s.isActive) {
+          // --- lignes actives : swarms magnétiques ---
+          const t = frameCount * 0.01;
+          const n = noise(s.x * 0.002, s.y * 0.002, t + s.seed);
+          const n2 = noise((s.x + 500) * 0.0015, (s.y - 800) * 0.0015, t);
+          // champ pseudo-magnétique : attraction vers les bords + courbure
+          let angle = map(n, 0, 1, -PI, PI) + (n2 - 0.5) * PI * 0.7;
+
+          // légère attraction vers les coins, pour donner des zones de regroupement
+          const corners = [
+            createVector(0, 0),
+            createVector(width, 0),
+            createVector(0, height),
+            createVector(width, height)
+          ];
+          let best = corners[0];
+          let bestD2 = Infinity;
+          for (let c of corners) {
+            const ddx = c.x - s.x;
+            const ddy = c.y - s.y;
+            const d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              best = c;
+            }
+          }
+          const towardCorner = atan2(best.y - s.y, best.x - s.x);
+          angle = lerpAngle(angle, towardCorner, 0.15);
+
+          s.angle = angle;
+          const speed = s.speed * (0.4 + 0.6 * (1 - idle)); // plus calme quand idle
+          s.x += cos(angle) * speed;
+          s.y += sin(angle) * speed;
+
+        } else {
+          // --- lignes passives : terrain & dégradation ---
+          const t = s.seed;
+          const n = noise(s.x * 0.0015, s.y * 0.0015, t);
+          let angle = map(n, 0, 1, -PI, PI);
+          s.angle = lerpAngle(s.angle, angle, 0.1);
+          const drift = s.speed * (1 - idle); // presque immobiles au repos
+          s.x += cos(s.angle) * drift;
+          s.y += sin(s.angle) * drift;
+
+          // dégradation progressive quand idle → segments plus courts
+          s.life = constrain(s.life + 0.0015 * idle, 0, 1);
+          s.len = lerp(s.baseLen, s.baseLen * 0.2, s.life);
+        }
+
+        // rebond simple sur les bords
+        if (s.x < 0) s.x += width;
+        if (s.x > width) s.x -= width;
+        if (s.y < 0) s.y += height;
+        if (s.y > height) s.y -= height;
+
+        // dessin
+        const distFactor = smoothstep(calmRadius * 0.9, max(width, height) * 0.75, r);
+        const alpha = s.isActive
+          ? map(distFactor, 0, 1, 40, 130)
+          : map(distFactor, 0, 1, 25, 90);
+
+        if (s.len < 6) {
+          // fin de vie → point
+          stroke(0, alpha);
+          strokeWeight(0.7);
+          point(s.x, s.y);
+        } else {
+          const dirX = cos(s.angle);
+          const dirY = sin(s.angle);
+          const half = s.len * 0.5;
+          const x1 = s.x - dirX * half;
+          const y1 = s.y - dirY * half;
+          const x2 = s.x + dirX * half;
+          const y2 = s.y + dirY * half;
+
+          stroke(0, alpha);
+          strokeWeight(s.isActive ? 1.0 : 0.6);
+          line(x1, y1, x2, y2);
+        }
+      }
+    }
+
+    /* ---------- COMMON DRAW ---------- */
+    function draw() {
+      if (theme === 'dark') {
+        drawDark();
+      } else {
+        drawLight();
+      }
+    }
+
+    /* ---------- UTILS ---------- */
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function lerpAngle(a, b, t) {
+      let diff = ((b - a + PI) % (TWO_PI)) - PI;
+      return a + diff * t;
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initMode();
+    }
+
+    // interactions
+    function mouseMoved() { registerInteraction(); }
+    function mousePressed() { registerInteraction(); }
+    function touchStarted() { registerInteraction(); }
+    function touchMoved() {
+      registerInteraction();
+      if (touches.length > 0) {
+        center.x = lerp(center.x, touches[0].x, 0.15);
+        center.y = lerp(center.y, touches[0].y, 0.15);
+      }
+      return false;
+    }
+
+    // toggle thème
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = (theme === 'dark') ? 'light' : 'dark';
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
+      initMode();
+      lastInteraction = millis();
+    });
+  </script>
+</body>
+</html>
