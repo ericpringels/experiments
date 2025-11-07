@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fond biomimétique – v7.1</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    max-width: 60ch;
+    margin: 10vh auto;
+    padding: 2rem;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+    transition: color 0.4s, background 0.4s;
+  }
+  body.light {
+    background: #fbfbfb;
+    color: #181818;
+  }
+  body.dark {
+    background: #05060a;
+    color: #f4f4f4;
+  }
+  .theme-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    color: inherit;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>Fond biomimétique – révision light</h1>
+    <p>
+      Le mode sombre reste inchangé. En mode clair, les ellipses ont été remplacées
+      par des points ou petits traits, et la zone de lecture a été élargie pour
+      améliorer la lisibilité.
+    </p>
+  </div>
+
+  <button class="theme-toggle" id="toggleTheme">🌓</button>
+
+  <script>
+    let particles = [];
+    let swarmCenters = [];
+    let center;
+    let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.body.classList.add(theme);
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
+      center = createVector(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+      noStroke();
+    }
+
+    function initSwarmCenters() {
+      swarmCenters = [];
+      const count = 3;
+      for (let i = 0; i < count; i++) {
+        swarmCenters.push({
+          x: random(width),
+          y: random(height),
+          phase: random(TWO_PI)
+        });
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const n = theme === 'dark' ? 380 : 950;
+      const cx = width / 2;
+      const cy = height / 2;
+      const maxR = max(width, height) * 0.8;
+
+      for (let i = 0; i < n; i++) {
+        let x, y;
+        if (theme === 'light') {
+          // Biais fort vers la périphérie
+          const bias = random();
+          let r;
+          if (bias < 0.75) r = random(maxR * 0.45, maxR);
+          else r = random(0, maxR);
+          const a = random(TWO_PI);
+          x = cx + cos(a) * r;
+          y = cy + sin(a) * r;
+        } else {
+          x = random(width);
+          y = random(height);
+        }
+
+        particles.push({
+          x,
+          y,
+          vx: random(-0.18, 0.18),
+          vy: random(-0.18, 0.18),
+          baseAlpha: random(0.55, 1),
+          phase: random(TWO_PI),
+          size: random(theme === 'dark' ? 0.8 : 1.5,
+                       theme === 'dark' ? 2.4 : 2.8),
+          isFast: random() < 0.12
+        });
+      }
+    }
+
+    function draw() {
+      const calmRadius = theme === 'dark' ? 190 : min(width, height) * 0.5; // zone élargie en light
+
+      if (theme === 'dark') background(7, 90);
+      else background(251);
+
+      const target = createVector(
+        (mouseX >= 0 && mouseX <= width) ? mouseX : width / 2,
+        (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
+      );
+      center.lerp(target, 0.06);
+      updateSwarmCenters();
+
+      for (let p of particles) {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const dist2 = dx * dx + dy * dy;
+        const r = sqrt(dist2) || 0.0001;
+
+        if (r < calmRadius) {
+          const repel = (calmRadius - r) / calmRadius;
+          const force = repel * (p.isFast ? 0.016 : 0.010);
+          const nx = dx / r;
+          const ny = dy / r;
+          p.vx += nx * force;
+          p.vy += ny * force;
+        }
+
+        const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
+        const turb = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
+        p.vx += turb;
+        p.vy += turb * 0.5;
+
+        if (p.isFast && r > calmRadius * 1.1) {
+          let nearest = null;
+          let bestD2 = Infinity;
+          for (let c of swarmCenters) {
+            const ddx = c.x - p.x;
+            const ddy = c.y - p.y;
+            const d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              nearest = c;
+            }
+          }
+          if (nearest) {
+            const ds = sqrt(bestD2) || 1;
+            const ax = (nearest.x - p.x) / ds;
+            const ay = (nearest.y - p.y) / ds;
+            const strength = 0.004;
+            p.vx += ax * strength;
+            p.vy += ay * strength;
+          }
+        }
+
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+
+        if (p.x < 0) p.x += width;
+        if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height;
+        if (p.y > height) p.y -= height;
+
+        const flicker = 0.6 + 0.4 * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
+        let fadeDist;
+        if (theme === 'light') fadeDist = smoothstep(calmRadius * 0.9, max(width, height) * 0.7, r);
+        else fadeDist = smoothstep(0, calmRadius * 1.2, r);
+        let alpha = p.baseAlpha * flicker * fadeDist;
+
+        if (theme === 'dark') {
+          const col = color(255, 255, 255, alpha * (p.isFast ? 255 : 220));
+          fill(col);
+          ellipse(p.x, p.y, p.size * (p.isFast ? 1.2 : 1.0));
+        } else {
+          // Points ou traits fins, pas d'ellipses
+          const baseAlpha = p.isFast ? 150 : 100;
+          stroke(0, alpha * baseAlpha);
+          strokeWeight(random(0.4, 0.8));
+          point(p.x, p.y);
+        }
+      }
+
+      if (theme === 'light') drawFlowField(calmRadius);
+    }
+
+    function updateSwarmCenters() {
+      const margin = 80;
+      for (let c of swarmCenters) {
+        const t = frameCount * 0.002 + c.phase;
+        c.x += (noise(t, 0) - 0.5) * 2.2;
+        c.y += (noise(0, t) - 0.5) * 2.2;
+        if (c.x < -margin) c.x = width + margin;
+        if (c.x > width + margin) c.x = -margin;
+        if (c.y < -margin) c.y = height + margin;
+        if (c.y > height + margin) c.y = -margin;
+      }
+    }
+
+    // Champ de flux simple
+    function drawFlowField(calmRadius) {
+      const spacing = 28;
+      const steps = 12;
+      const stepLen = 6;
+
+      strokeWeight(0.6);
+      for (let y = 0; y < height; y += spacing) {
+        for (let x = 0; x < width; x += spacing) {
+          const d = dist(x, y, center.x, center.y);
+          if (d < calmRadius * 1.05) continue;
+
+          let px = x;
+          let py = y;
+          const density = smoothstep(calmRadius * 1.0, max(width, height) * 0.7, d);
+          const alpha = map(density, 0, 1, 25, 100, true);
+          stroke(0, alpha);
+
+          beginShape();
+          for (let i = 0; i < steps; i++) {
+            const v = flowVector(px, py);
+            px += v.x * stepLen;
+            py += v.y * stepLen;
+            if (dist(px, py, center.x, center.y) < calmRadius) break;
+            vertex(px, py);
+          }
+          endShape();
+        }
+      }
+      noStroke();
+    }
+
+    function flowVector(x, y) {
+      const s = 0.004;
+      const t = frameCount * 0.01;
+      const n1 = noise(x * s, y * s, t);
+      const n2 = noise((x + 1000) * s, (y - 500) * s, t * 0.7);
+      let angle = map(n1, 0, 1, -PI, PI);
+      angle += (n2 - 0.5) * PI * 0.7;
+      return createVector(cos(angle), sin(angle));
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initSwarmCenters();
+      initParticles();
+    }
+
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', () => {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
+      initSwarmCenters();
+      initParticles();
+    });
+  </script>
+</body>
+</html>
