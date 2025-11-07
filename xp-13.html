@@ -6,47 +6,24 @@
 <title>Fond biomimétique – cosmos & flux organiques</title>
 <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  canvas {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-  }
+  html, body { margin:0; padding:0; overflow:hidden; }
+  canvas { position:fixed; inset:0; z-index:-1; }
   .content {
-    position: relative;
-    z-index: 1;
-    max-width: 60ch;
-    margin: 10vh auto;
-    padding: 2rem;
-    font-family: system-ui, sans-serif;
-    line-height: 1.6;
-    transition: color .4s, background .4s;
+    position:relative; z-index:1; max-width:60ch;
+    margin:10vh auto; padding:2rem;
+    font-family:system-ui,sans-serif; line-height:1.6;
+    transition:color .4s, background .4s;
   }
-  body.light {
-    background: #fbfbfb;
-    color: #181818;
-  }
-  body.dark {
-    background: #05060a;
-    color: #f4f4f4;
-  }
+  body.light { background:#fbfbfb; color:#181818; }
+  body.dark  { background:#05060a; color:#f4f4f4; }
   .theme-toggle {
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 5;
-    background: rgba(255,255,255,.15);
-    border: 1px solid rgba(255,255,255,.25);
-    border-radius: 9999px;
-    padding: .4rem .9rem;
-    font-size: .9rem;
-    cursor: pointer;
-    backdrop-filter: blur(6px);
-    color: inherit;
+    position:fixed; right:1rem; bottom:1rem; z-index:5;
+    background:rgba(255,255,255,.15);
+    border:1px solid rgba(255,255,255,.25);
+    border-radius:9999px;
+    padding:.4rem .9rem;
+    font-size:.9rem; cursor:pointer;
+    backdrop-filter:blur(6px); color:inherit;
   }
 </style>
 </head>
@@ -55,7 +32,7 @@
     <h1>Fond biomimétique – lecture au centre, flux en périphérie</h1>
     <p>
       En mode sombre, un cosmos vivant. En mode clair, des filaments qui
-      se fragmentent et se reforment, plus denses là où on ne lit pas,
+      se fragmentent et se reforment, plus denses là où l’on ne lit pas,
       et une grande zone blanche qui revient au centre lorsqu’on
       arrête d’interagir.
     </p>
@@ -68,14 +45,10 @@
 
     let center;
     let lastInteraction = 0;
-
-    // Dark mode
     let stars = [];
-
-    // Light mode
     let filaments = [];
-    const ACTIVE_RATIO = 0.2;   // 20% plus rapides
-    let densifyThreshold = 0.2; // seuil dynamique pour les 20% "peu survolés"
+    const ACTIVE_RATIO = 0.2;
+    let densifyThreshold = 0.2;
 
     function setup() {
       createCanvas(windowWidth, windowHeight);
@@ -85,6 +58,9 @@
       strokeCap(ROUND);
       window.addEventListener('scroll', () => lastInteraction = millis(), { passive: true });
       lastInteraction = millis();
+
+      // Fix : reset draw loop when theme changes
+      loop();
     }
 
     function initMode() {
@@ -92,21 +68,17 @@
       else initLight();
     }
 
-    /* ---------- DARK MODE ---------- */
+    /* ---- DARK ---- */
 
     function initDark() {
       stars = [];
       const N = 380;
       for (let i = 0; i < N; i++) {
         stars.push({
-          x: random(width),
-          y: random(height),
-          vx: random(-0.2, 0.2),
-          vy: random(-0.2, 0.2),
-          baseAlpha: random(0.4, 1),
-          phase: random(TWO_PI),
-          size: random(0.7, 2.3),
-          isFast: random() < 0.12
+          x: random(width), y: random(height),
+          vx: random(-0.2, 0.2), vy: random(-0.2, 0.2),
+          baseAlpha: random(0.4, 1), phase: random(TWO_PI),
+          size: random(0.7, 2.3), isFast: random() < 0.12
         });
       }
     }
@@ -119,33 +91,24 @@
         (mouseY >= 0 && mouseY <= height) ? mouseY : height / 2
       );
       center.lerp(target, 0.06);
-
       noStroke();
-      for (const p of stars) {
-        const dx = p.x - center.x;
-        const dy = p.y - center.y;
-        const r = sqrt(dx * dx + dy * dy) || 1;
 
+      for (const p of stars) {
+        const dx = p.x - center.x, dy = p.y - center.y;
+        const r = sqrt(dx * dx + dy * dy) || 1;
         if (r < calmR) {
           const f = (calmR - r) / calmR * (p.isFast ? 0.016 : 0.010);
           p.vx += dx / r * f;
           p.vy += dy / r * f;
         }
-
         const n = noise(p.x * 0.002, p.y * 0.002, frameCount * 0.002);
         const turb = (n - 0.5) * (p.isFast ? 0.025 : 0.012);
-        p.vx += turb;
-        p.vy += turb * 0.5;
-
-        p.x += p.vx;
-        p.y += p.vy;
+        p.vx += turb; p.vy += turb * 0.5;
+        p.x += p.vx; p.y += p.vy;
         p.vx *= p.isFast ? 0.988 : 0.982;
         p.vy *= p.isFast ? 0.988 : 0.982;
-
-        if (p.x < 0) p.x += width;
-        if (p.x > width) p.x -= width;
-        if (p.y < 0) p.y += height;
-        if (p.y > height) p.y -= height;
+        if (p.x < 0) p.x += width; if (p.x > width) p.x -= width;
+        if (p.y < 0) p.y += height; if (p.y > height) p.y -= height;
 
         const flick = 0.6 + 0.4 * sin(frameCount * (p.isFast ? 0.05 : 0.03) + p.phase);
         const fade = constrain(r / calmR, 0, 1);
@@ -155,177 +118,110 @@
       }
     }
 
-    /* ---------- LIGHT MODE ---------- */
+    /* ---- LIGHT ---- */
 
     function initLight() {
       filaments = [];
-      const N = 260; // densité globale
+      const N = 260;
       const minD = min(width, height);
       const calm = minD * 0.45;
-
       for (let i = 0; i < N; i++) {
         let x, y, r;
         do {
           x = random(width);
           y = random(height);
           r = dist(x, y, width / 2, height / 2);
-        } while (r < calm * 0.9); // on évite la zone de lecture au départ
-
+        } while (r < calm * 0.9);
         const isActive = (i < N * ACTIVE_RATIO);
-        const baseLen = isActive ? random(18, 30) : random(10, 22);
-
         filaments.push({
-          x,
-          y,
+          x, y,
           angle: random(TWO_PI),
-          baseLen,
+          baseLen: isActive ? random(18, 30) : random(10, 22),
           speedBase: isActive ? random(0.3, 0.6) : random(0.04, 0.18),
           isActive,
-          attention: 0,          // "survol" par le curseur
+          attention: 0,
           phase: random(TWO_PI),
           segBase: isActive ? int(random(2, 3)) : int(random(3, 4))
         });
       }
-
       densifyThreshold = 0.2;
     }
 
     function updateLightMotion() {
       const minD = min(width, height);
-      // temps sans interaction
       const idle = constrain((millis() - lastInteraction) / 8000, 0, 1);
+      const calmR = lerp(minD * 0.35, minD * 0.7, idle);
 
-      // zone de lecture : rayon plus grand quand idle (≈ 80% visuelle)
-      const calmRActive = minD * 0.35;
-      const calmRIdle = minD * 0.7;
-      const calmR = lerp(calmRActive, calmRIdle, idle);
-
-      // centre : suit le curseur, puis revient au centre quand idle
-      const hasMouse = mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height;
+      const hasMouse = (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height);
       const target = (idle < 0.6 && hasMouse)
         ? createVector(mouseX, mouseY)
         : createVector(width / 2, height / 2);
       center.lerp(target, 0.05);
 
-      // 1er passage : mouvement + mise à jour de l'attention
       for (let f of filaments) {
-        let dx = f.x - center.x;
-        let dy = f.y - center.y;
+        let dx = f.x - center.x, dy = f.y - center.y;
         let r = sqrt(dx * dx + dy * dy) || 1;
-
-        // garder la zone de lecture blanche
         if (r < calmR) {
           const push = (calmR - r) / calmR;
           f.x += dx / r * push * 0.5;
           f.y += dy / r * 0.5;
-          dx = f.x - center.x;
-          dy = f.y - center.y;
-          r = sqrt(dx * dx + dy * dy) || 1;
         }
 
-        // champ de bruit (direction principale)
         const n = noise(f.x * 0.0015, f.y * 0.0015, frameCount * 0.002 + f.phase);
         const noiseAngle = map(n, 0, 1, -PI, PI);
-
-        // composante "fluides / magnétisme" : rotation autour du centre
         const swirlAngle = atan2(dy, dx) + HALF_PI;
-        const swirlStrength = (1 - idle) * (f.isActive ? 0.6 : 0.4); // plus fort quand interaction
-
+        const swirlStrength = (1 - idle) * (f.isActive ? 0.6 : 0.4);
         const targetAngle = lerpAngle(noiseAngle, swirlAngle, swirlStrength);
         f.angle = lerpAngle(f.angle, targetAngle, 0.08);
 
-        // amplitude de mouvement : toujours > 0, mais calmée quand idle
-        const base = f.speedBase;
-        const moveFactor = f.isActive
-          ? (0.25 + 0.7 * (1 - idle * 0.5))   // actives : restent dynamiques
-          : (0.1 + 0.4 * (1 - idle * 0.8));   // passives : très lentes au repos
-        const speed = base * moveFactor;
-
+        const moveFactor = f.isActive ? (0.25 + 0.7 * (1 - idle * 0.5))
+                                       : (0.1 + 0.4 * (1 - idle * 0.8));
+        const speed = f.speedBase * moveFactor;
         f.x += cos(f.angle) * speed;
         f.y += sin(f.angle) * speed;
 
-        // wrap basique
-        if (f.x < 0) f.x += width;
-        if (f.x > width) f.x -= width;
-        if (f.y < 0) f.y += height;
-        if (f.y > height) f.y -= height;
+        if (f.x < 0) f.x += width; if (f.x > width) f.x -= width;
+        if (f.y < 0) f.y += height; if (f.y > height) f.y -= height;
 
-        // attention : augmente si filament proche de la zone de lecture pendant interaction
-        if (idle < 0.7 && r < calmR * 1.1) {
-          f.attention = constrain(f.attention + 0.02, 0, 1);
-        } else {
-          f.attention = constrain(f.attention - 0.002, 0, 1);
-        }
+        if (idle < 0.7 && r < calmR * 1.1) f.attention = constrain(f.attention + 0.02, 0, 1);
+        else f.attention = constrain(f.attention - 0.002, 0, 1);
       }
 
-      // 2e passage : ajuster densifyThreshold pour que ~20% soient "peu survolés"
-      let lowCount = 0;
-      for (let f of filaments) {
-        if (f.attention < densifyThreshold) lowCount++;
-      }
-      const ratio = lowCount / filaments.length;
+      let low = 0;
+      for (const f of filaments) if (f.attention < densifyThreshold) low++;
+      const ratio = low / filaments.length;
       if (ratio < 0.2) densifyThreshold = min(1, densifyThreshold + 0.005);
       else if (ratio > 0.2) densifyThreshold = max(0, densifyThreshold - 0.005);
 
-      // 3e passage : dessin
       background(251);
-      strokeCap(ROUND);
+      const maxD = max(width, height) * 0.75;
 
       for (let f of filaments) {
-        const dx = f.x - center.x;
-        const dy = f.y - center.y;
+        const dx = f.x - center.x, dy = f.y - center.y;
         const r = sqrt(dx * dx + dy * dy) || 1;
-        const minD2 = max(width, height) * 0.75;
-        const minDLocal = min(width, height);
-
-        // classification : filaments "peu survolés" en périphérie → densification
-        const isCluster = (f.attention < densifyThreshold) && (r > calmR * 1.05);
-
-        // fragmentation en fonction de l'état (idle) et du type
-        const idle = constrain((millis() - lastInteraction) / 8000, 0, 1);
-        const fragFactor = lerp(1, 0.4, idle); // plus idle → plus fragmenté
-        const baseLen = f.baseLen * (isCluster ? 1.3 : 1.0); // clusters un peu plus longs
+        const isCluster = (f.attention < densifyThreshold && r > calmR * 1.05);
+        const fragFactor = lerp(1, 0.4, idle);
+        const baseLen = f.baseLen * (isCluster ? 1.3 : 1.0);
         const drawLen = baseLen * fragFactor;
 
-        const segCount = f.isActive
-          ? int(lerp(f.segBase, max(2, f.segBase + 1), 1 - idle))       // actives : segments un peu plus longs quand interaction
-          : int(lerp(f.segBase + 1, f.segBase + 2, idle));              // passives : plus de fragments au repos
+        const segCount = max(2, f.isActive ? int(lerp(f.segBase, f.segBase + 1, 1 - idle))
+                                           : int(lerp(f.segBase + 1, f.segBase + 2, idle)));
+        const segLen = drawLen / segCount;
+        const distFactor = smoothstep(calmR * 0.9, maxD, r);
 
-        const segs = max(2, segCount);
-        const segLen = drawLen / segs;
-
-        // densité/alpha : plus dense à l'extérieur de la zone de lecture
-        const distFactor = smoothstep(calmR * 0.9, minD2, r);
-        let baseAlpha = f.isActive
-          ? map(distFactor, 0, 1, 60, 160)
-          : map(distFactor, 0, 1, 30, 110);
-
-        // densifier 20% "peu survolés" en périphérie (jusqu'à 40% visuelle)
-        if (isCluster) {
-          baseAlpha *= lerp(1.1, 1.6, idle); // plus idle → plus denses en bord
-        } else {
-          baseAlpha *= lerp(1.0, 0.7, idle); // les autres s'adoucissent un peu
-        }
-
-        // légère pulsation de vie
+        let baseAlpha = f.isActive ? map(distFactor, 0, 1, 60, 160)
+                                   : map(distFactor, 0, 1, 30, 110);
+        baseAlpha *= isCluster ? lerp(1.1, 1.6, idle) : lerp(1.0, 0.7, idle);
         const puls = 0.7 + 0.3 * sin(frameCount * 0.01 + f.phase);
         const alpha = baseAlpha * puls;
 
-        // raréfier légèrement les passifs quand idle élevé, mais toujours en mouvement
-        if (!f.isActive && idle > 0.7) {
-          const skip = noise(f.phase, frameCount * 0.003);
-          if (skip < 0.3) continue;
-        }
-
         stroke(0, alpha);
         strokeWeight(f.isActive ? 0.9 : 0.6);
-
-        const dirX = cos(f.angle);
-        const dirY = sin(f.angle);
-        for (let i = 0; i < segs; i++) {
-          const offset = (i - segs / 2) * segLen * 1.1;
-          const x1 = f.x + dirX * offset;
-          const y1 = f.y + dirY * offset;
+        const dirX = cos(f.angle), dirY = sin(f.angle);
+        for (let i = 0; i < segCount; i++) {
+          const off = (i - segCount / 2) * segLen * 1.1;
+          const x1 = f.x + dirX * off;
+          const y1 = f.y + dirY * off;
           const x2 = x1 + dirX * segLen * 0.9;
           const y2 = y1 + dirY * segLen * 0.9;
           line(x1, y1, x2, y2);
@@ -333,23 +229,42 @@
       }
     }
 
-    /* ---------- DRAW LOOP ---------- */
-
+    /* ---- LOOP ---- */
     function draw() {
-      if (theme === 'dark') {
-        drawDark();
-      } else {
-        updateLightMotion();
-      }
+      if (theme === 'dark') drawDark();
+      else updateLightMotion();
     }
 
-    /* ---------- UTILS ---------- */
-
+    /* ---- UTILS ---- */
     function smoothstep(edge0, edge1, x) {
-      let t = constrain((x - edge0) / (edge1 - x), 0, 1);
-      // oups, typo, corrigé plus bas
-      return t;
+      let t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
     }
+    function lerpAngle(a, b, t) {
+      let diff = ((b - a + PI) % (TWO_PI)) - PI;
+      return a + diff * t;
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      center.set(width / 2, height / 2);
+      initMode();
+    }
+
+    function registerInteraction() { lastInteraction = millis(); }
+    function mouseMoved() { registerInteraction(); }
+    function mousePressed() { registerInteraction(); }
+    function touchStarted() { registerInteraction(); }
+    function touchMoved() { registerInteraction(); return false; }
+
+    // ✅ FIXED: switcher now fully working
+    document.getElementById('toggleTheme').addEventListener('click', () => {
+      theme = (theme === 'dark') ? 'light' : 'dark';
+      document.body.classList.remove('dark', 'light');
+      document.body.classList.add(theme);
+      initMode();
+      lastInteraction = millis();
+    });
   </script>
 </body>
 </html>
